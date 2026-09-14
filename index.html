@@ -1,0 +1,386 @@
+<title>천층탑</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;700&display=swap">
+<style>
+  :root{
+    --bg:#110e29;
+    --ink:#f4efe3;
+    --muted:#9d98bd;
+    --accent:#ff7a90;
+    --accent-ink:#2a0d14;
+    --panel:rgba(17,14,41,.72);
+    --line:rgba(244,239,227,.14);
+  }
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:'Noto Sans KR',system-ui,-apple-system,sans-serif;
+    overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:manipulation;
+  }
+  #stage{position:fixed;inset:0;display:block;width:100%;height:100%;cursor:pointer}
+  .hud{
+    position:fixed;top:0;left:0;right:0;
+    padding:18px 20px;display:flex;justify-content:space-between;align-items:flex-start;
+    pointer-events:none;
+  }
+  .floor{
+    font-family:'Black Han Sans','Noto Sans KR',sans-serif;
+    font-size:60px;line-height:1;font-variant-numeric:tabular-nums;
+    text-shadow:0 2px 0 rgba(0,0,0,.35);
+  }
+  .floor small{font-size:24px;margin-left:2px}
+  .best{font-size:12px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;margin-top:6px;font-variant-numeric:tabular-nums}
+  .mute{
+    pointer-events:auto;background:none;border:1px solid var(--line);color:var(--muted);
+    font:inherit;font-size:12px;letter-spacing:.08em;padding:6px 10px;border-radius:999px;cursor:pointer;
+  }
+  .mute:hover,.mute:focus-visible{color:var(--ink);border-color:var(--ink);outline:none}
+  .perfect{
+    position:fixed;left:50%;top:34%;transform:translate(-50%,0);
+    font-family:'Black Han Sans','Noto Sans KR',sans-serif;font-size:34px;color:var(--accent);
+    letter-spacing:.04em;opacity:0;pointer-events:none;
+    transition:opacity .18s ease,transform .18s ease;text-shadow:0 0 18px rgba(255,122,144,.55);
+  }
+  .perfect.show{opacity:1;transform:translate(-50%,-18px)}
+  .overlay{
+    position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:16px;text-align:center;padding-block:24px;padding-inline:24px;
+    background:radial-gradient(ellipse at 50% 40%,rgba(17,14,41,.55),rgba(17,14,41,.92));
+  }
+  .overlay[hidden]{display:none}
+  .overlay h1{
+    font-family:'Black Han Sans','Noto Sans KR',sans-serif;
+    font-size:clamp(64px,16vw,132px);margin:0;line-height:.95;text-wrap:balance;
+    letter-spacing:.02em;text-shadow:0 6px 0 rgba(0,0,0,.35);
+  }
+  .overlay .eyebrow{font-size:12px;letter-spacing:.24em;color:var(--accent);text-transform:uppercase;margin:0}
+  .overlay p{max-width:30ch;color:var(--muted);margin:0;line-height:1.6;text-wrap:balance}
+  .overlay .result{font-family:'Black Han Sans','Noto Sans KR',sans-serif;font-size:clamp(40px,10vw,84px);margin:0;line-height:1;font-variant-numeric:tabular-nums}
+  .overlay .result small{font-size:.45em}
+  .btn{
+    margin-top:8px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:999px;
+    font:700 16px/1 'Noto Sans KR',sans-serif;padding:16px 34px;cursor:pointer;
+    box-shadow:0 8px 0 rgba(0,0,0,.35);transition:transform .08s ease,box-shadow .08s ease;
+  }
+  .btn:hover{transform:translateY(-2px);box-shadow:0 10px 0 rgba(0,0,0,.35)}
+  .btn:active{transform:translateY(4px);box-shadow:0 4px 0 rgba(0,0,0,.35)}
+  .btn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+  .hint{font-size:12px;color:var(--muted);letter-spacing:.06em}
+  kbd{font:inherit;border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--ink)}
+  @media (prefers-reduced-motion:reduce){
+    .perfect,.btn{transition:none}
+  }
+</style>
+
+<canvas id="stage" aria-label="블록을 쌓는 게임 화면"></canvas>
+
+<div class="hud">
+  <div>
+    <div class="floor" id="floor">0<small>층</small></div>
+    <div class="best" id="best">최고 0층</div>
+  </div>
+  <button class="mute" id="mute" type="button" aria-pressed="false">소리 켜짐</button>
+</div>
+
+<div class="perfect" id="perfect">PERFECT</div>
+
+<div class="overlay" id="overlay">
+  <p class="eyebrow" id="eyebrow">한 번의 탭으로 한 층</p>
+  <h1 id="title">천층탑</h1>
+  <p class="result" id="result" hidden>0<small>층</small></p>
+  <p id="desc">움직이는 블록을 탭해서 아래 블록 위에 놓으세요. 삐져나온 부분은 잘려 나가고, 블록은 점점 작아집니다. 딱 맞추면 PERFECT, 세 번 연속이면 블록이 다시 커집니다.</p>
+  <button class="btn" id="startBtn" type="button">쌓기 시작</button>
+  <div class="hint">탭 · 클릭 · <kbd>Space</kbd></div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const cv=document.getElementById('stage'), ctx=cv.getContext('2d');
+  const $floor=document.getElementById('floor'), $best=document.getElementById('best');
+  const $perfect=document.getElementById('perfect'), $overlay=document.getElementById('overlay');
+  const $title=document.getElementById('title'), $eyebrow=document.getElementById('eyebrow');
+  const $result=document.getElementById('result'), $desc=document.getElementById('desc');
+  const $btn=document.getElementById('startBtn'), $mute=document.getElementById('mute');
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- 상수 ----------
+  const BASE=10;        // 기초 블록 한 변 (단위)
+  const BH=1.15;        // 블록 높이 (단위)
+  const RANGE=13;       // 블록 이동 폭
+  const PERFECT_TOL=0.36;
+  const C=Math.cos(Math.PI/6), S=Math.sin(Math.PI/6);
+
+  // ---------- 상태 ----------
+  let W=0,H=0,unit=20,zoom=1,zoomT=1,camY=0,camYT=0;
+  let state='idle';       // idle | play | over
+  let tower=[], mover=null, pieces=[], pulses=[];
+  let combo=0, best=0, shake=0, overAt=0, lastT=0;
+  let muted=false;
+
+  try{ best=parseInt(localStorage.getItem('cheoncheungtap.best')||'0',10)||0; }catch(e){}
+  try{ muted=localStorage.getItem('cheoncheungtap.muted')==='1'; }catch(e){}
+
+  function saveBest(){ try{ localStorage.setItem('cheoncheungtap.best',String(best)); }catch(e){} }
+  function setMuteLabel(){
+    $mute.textContent=muted?'소리 꺼짐':'소리 켜짐';
+    $mute.setAttribute('aria-pressed',String(muted));
+  }
+  setMuteLabel();
+
+  // ---------- 소리 ----------
+  let ac=null;
+  function tone(freq,dur,type,gain){
+    if(muted) return;
+    try{
+      ac=ac||new (window.AudioContext||window.webkitAudioContext)();
+      if(ac.state==='suspended') ac.resume();
+      const o=ac.createOscillator(), g=ac.createGain(), t=ac.currentTime;
+      o.type=type||'sine'; o.frequency.setValueAtTime(freq,t);
+      g.gain.setValueAtTime(gain||0.07,t);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      o.connect(g).connect(ac.destination); o.start(t); o.stop(t+dur);
+    }catch(e){}
+  }
+
+  // ---------- 화면 ----------
+  function resize(){
+    const dpr=Math.min(window.devicePixelRatio||1,2);
+    W=window.innerWidth; H=window.innerHeight;
+    cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    unit=Math.min(W,560)/30;
+  }
+  window.addEventListener('resize',resize);
+  resize();
+
+  function proj(x,y,z){
+    const u=unit*zoom;
+    return [(x-z)*C*u + W/2, (x+z)*S*u - y*BH*u + camY];
+  }
+  function hueAt(level){ return (212 + level*7) % 360; }
+
+  function poly(pts,fill){
+    ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+    ctx.closePath(); ctx.fillStyle=fill; ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1; ctx.stroke();
+  }
+  function drawBox(b,alpha){
+    const {x,z,w,d,y0,h,hue}=b, yt=y0+h;
+    ctx.globalAlpha=alpha==null?1:alpha;
+    const sat=b.base?28:58;
+    const lt=b.base?34:64, lr=b.base?22:42, ll=b.base?28:53;
+    poly([proj(x+w,yt,z),proj(x+w,yt,z+d),proj(x+w,y0,z+d),proj(x+w,y0,z)],`hsl(${hue} ${sat}% ${lr}%)`);
+    poly([proj(x,yt,z+d),proj(x+w,yt,z+d),proj(x+w,y0,z+d),proj(x,y0,z+d)],`hsl(${hue} ${sat}% ${ll}%)`);
+    poly([proj(x,yt,z),proj(x+w,yt,z),proj(x+w,yt,z+d),proj(x,yt,z+d)],`hsl(${hue} ${sat}% ${lt}%)`);
+    ctx.globalAlpha=1;
+  }
+
+  function drawBackground(){
+    const top=tower.length;
+    const h=hueAt(top);
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,`hsl(${(h+30)%360} 38% 9%)`);
+    g.addColorStop(1,`hsl(${h} 42% 19%)`);
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    // 은은한 달빛
+    const r=ctx.createRadialGradient(W*0.5,H*0.42,10,W*0.5,H*0.42,Math.max(W,H)*0.6);
+    r.addColorStop(0,`hsl(${h} 60% 60% / .18)`);
+    r.addColorStop(1,'hsl(0 0% 0% / 0)');
+    ctx.fillStyle=r; ctx.fillRect(0,0,W,H);
+  }
+
+  // ---------- 게임 ----------
+  function start(){
+    tower=[{x:0,z:0,w:BASE,d:BASE,y0:-5,h:5,hue:hueAt(0),base:true}];
+    pieces=[]; pulses=[]; combo=0; shake=0;
+    zoom=1; zoomT=1;
+    camY=H*0.62 + 1*BH*unit; camYT=camY;
+    state='play';
+    spawnMover();
+    updateHud();
+    $overlay.hidden=true;
+  }
+
+  function spawnMover(){
+    const L=tower.length, prev=tower[L-1];
+    const axis=(L%2===1)?'x':'z';
+    const side=(Math.floor(L/2)%2===0)?-1:1;
+    mover={
+      x:prev.x, z:prev.z, w:prev.w, d:prev.d, y0:L-1, h:1, hue:hueAt(L),
+      axis, pos:side*RANGE, dir:-side,
+      speed:Math.min(26, 9 + L*0.32),
+    };
+    camYT=H*0.62 + L*BH*unit;
+  }
+
+  function drop(){
+    const L=tower.length, prev=tower[L-1], m=mover;
+    const axis=m.axis;
+    const cur=(axis==='x')?m.x:m.z;
+    const pv=(axis==='x')?prev.x:prev.z;
+    const size=(axis==='x')?m.w:m.d;
+    const delta=cur-pv;
+    const overlap=size-Math.abs(delta);
+
+    if(overlap<=0){ gameOver(); return; }
+
+    if(Math.abs(delta)<PERFECT_TOL){
+      // PERFECT
+      if(axis==='x') m.x=prev.x; else m.z=prev.z;
+      combo++;
+      if(combo>=3){
+        const grow=0.6;
+        const nw=Math.min(BASE, m.w+grow), nd=Math.min(BASE, m.d+grow);
+        m.x-= (nw-m.w)/2; m.z-=(nd-m.d)/2; m.w=nw; m.d=nd;
+      }
+      pulses.push({b:{...m},t:0});
+      tone(520+Math.min(combo,8)*70,0.16,'sine',0.09);
+      setTimeout(()=>tone(780+Math.min(combo,8)*70,0.22,'sine',0.07),70);
+      flashPerfect(combo);
+    }else{
+      combo=0;
+      // 잘려 나가는 조각
+      const piece={x:m.x,z:m.z,w:m.w,d:m.d,y0:m.y0,h:1,hue:m.hue,vy:0,age:0,drift:0};
+      if(axis==='x'){
+        if(delta>0){ piece.x=prev.x+prev.w; piece.w=delta; piece.drift=1; m.x=cur; m.w=overlap; }
+        else{ piece.x=cur; piece.w=-delta; piece.drift=-1; m.x=prev.x; m.w=overlap; }
+        piece.dx=piece.drift; piece.dz=0;
+      }else{
+        if(delta>0){ piece.z=prev.z+prev.d; piece.d=delta; piece.drift=1; m.z=cur; m.d=overlap; }
+        else{ piece.z=cur; piece.d=-delta; piece.drift=-1; m.z=prev.z; m.d=overlap; }
+        piece.dx=0; piece.dz=piece.drift;
+      }
+      pieces.push(piece);
+      tone(150+L*3,0.12,'triangle',0.08);
+      if(!reduced) shake=Math.min(1, 0.25 + Math.abs(delta)/size);
+    }
+
+    tower.push({x:m.x,z:m.z,w:m.w,d:m.d,y0:m.y0,h:1,hue:m.hue});
+    const floors=tower.length-1;
+    if(floors>best){ best=floors; saveBest(); }
+    updateHud();
+    spawnMover();
+  }
+
+  function gameOver(){
+    const m=mover;
+    pieces.push({x:m.x,z:m.z,w:m.w,d:m.d,y0:m.y0,h:1,hue:m.hue,vy:0,age:0,dx:m.axis==='x'?m.dir:0,dz:m.axis==='z'?m.dir:0});
+    mover=null;
+    state='over'; overAt=performance.now();
+    tone(110,0.6,'sawtooth',0.06);
+    const L=tower.length;
+    zoomT=Math.min(1, (H*0.72)/((L*BH+BASE)*unit));
+    camYT=H*0.9 - BASE*S*unit*zoomT;
+    const floors=L-1;
+    $eyebrow.textContent=floors>=best&&floors>0?'새로운 최고 기록':'여기까지';
+    $title.textContent=floors===0?'첫 층부터 미끄러졌어요':'탑이 무너졌어요';
+    $result.innerHTML=floors+'<small>층</small>';
+    $result.hidden=false;
+    $desc.textContent=floors>=100?'백 층을 넘겼습니다. 천 층까지는 아직 멀어요.':floors>=30?'삼십 층 넘게 쌓았어요. 블록이 작아질수록 PERFECT가 열쇠입니다.':'딱 맞추는 순간이 세 번 이어지면 블록이 다시 넓어집니다.';
+    $btn.textContent='다시 쌓기';
+    setTimeout(()=>{ if(state==='over') $overlay.hidden=false; },900);
+  }
+
+  function updateHud(){
+    $floor.innerHTML=(tower.length-1)+'<small>층</small>';
+    $best.textContent='최고 '+best+'층';
+  }
+  let perfectTimer=null;
+  function flashPerfect(n){
+    $perfect.textContent=n>1?'PERFECT ×'+n:'PERFECT';
+    $perfect.classList.add('show');
+    clearTimeout(perfectTimer);
+    perfectTimer=setTimeout(()=>$perfect.classList.remove('show'),650);
+  }
+
+  function action(){
+    if(state==='idle') start();
+    else if(state==='play') drop();
+    else if(state==='over' && performance.now()-overAt>700) start();
+  }
+
+  // ---------- 루프 ----------
+  function frame(t){
+    const dt=Math.min(0.05,(t-lastT)/1000||0); lastT=t;
+
+    // 카메라
+    const k=1-Math.pow(0.001,dt);
+    camY+=(camYT-camY)*k;
+    zoom+=(zoomT-zoom)*k;
+    if(shake>0) shake=Math.max(0,shake-dt*4);
+
+    // 움직이는 블록
+    if(mover){
+      mover.pos+=mover.dir*mover.speed*dt;
+      if(mover.pos>RANGE){ mover.pos=RANGE; mover.dir=-1; }
+      if(mover.pos<-RANGE){ mover.pos=-RANGE; mover.dir=1; }
+      const prev=tower[tower.length-1];
+      if(mover.axis==='x'){ mover.x=prev.x+mover.pos; mover.z=prev.z; }
+      else{ mover.z=prev.z+mover.pos; mover.x=prev.x; }
+    }
+
+    // 떨어지는 조각
+    for(const p of pieces){
+      p.age+=dt; p.vy-=42*dt; p.y0+=p.vy*dt;
+      p.x+=p.dx*3*dt; p.z+=p.dz*3*dt;
+    }
+    pieces=pieces.filter(p=>p.age<1.6);
+    for(const q of pulses) q.t+=dt*1.8;
+    pulses=pulses.filter(q=>q.t<1);
+
+    // 그리기
+    drawBackground();
+    ctx.save();
+    if(shake>0){
+      const a=shake*shake*6;
+      ctx.translate((Math.random()-0.5)*a,(Math.random()-0.5)*a);
+    }
+    for(const b of tower) drawBox(b);
+    for(const p of pieces) drawBox(p, Math.max(0,1-p.age/1.6));
+    if(mover) drawBox(mover);
+    for(const q of pulses){
+      const b=q.b, e=q.t*1.6, yt=b.y0+b.h;
+      const pts=[proj(b.x-e,yt,b.z-e),proj(b.x+b.w+e,yt,b.z-e),proj(b.x+b.w+e,yt,b.z+b.d+e),proj(b.x-e,yt,b.z+b.d+e)];
+      ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+      for(let i=1;i<4;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+      ctx.closePath();
+      ctx.strokeStyle=`rgba(255,255,255,${(1-q.t)*0.9})`; ctx.lineWidth=3*(1-q.t)+1; ctx.stroke();
+    }
+    ctx.restore();
+
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- 입력 ----------
+  cv.addEventListener('pointerdown',e=>{ e.preventDefault(); action(); });
+  $btn.addEventListener('click',e=>{ e.stopPropagation(); action(); });
+  $overlay.addEventListener('pointerdown',e=>{ if(e.target===$overlay) action(); });
+  window.addEventListener('keydown',e=>{
+    if(e.code==='Space'||e.code==='Enter'||e.code==='ArrowUp'){
+      if(document.activeElement===$mute) return;
+      e.preventDefault(); action();
+    }
+  });
+  $mute.addEventListener('click',()=>{
+    muted=!muted; setMuteLabel();
+    try{ localStorage.setItem('cheoncheungtap.muted',muted?'1':'0'); }catch(e){}
+    $mute.blur();
+  });
+
+  // ---------- 부팅 ----------
+  let booted=false;
+  function boot(data){
+    if(data&&typeof data.best==='number'){ best=Math.max(best,data.best); updateHud(); }
+    if(booted) return; booted=true;
+    tower=[{x:0,z:0,w:BASE,d:BASE,y0:-5,h:5,hue:hueAt(0),base:true}];
+    camY=H*0.62+BH*unit; camYT=camY;
+    updateHud();
+    requestAnimationFrame(t=>{ lastT=t; frame(t); });
+  }
+  try{ window.claude?.hot?.snapshot?.(()=>({best})); }catch(e){}
+  try{ if(window.claude?.hot?.ready) window.claude.hot.ready(boot); }catch(e){}
+  setTimeout(()=>boot(window.claude?.hot?.data ?? {}),250);
+})();
+</script>
