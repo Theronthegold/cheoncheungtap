@@ -207,9 +207,10 @@
     const L=tower.length, prev=tower[L-1];
     const axis=(L%2===1)?'x':'z';
     const side=(Math.floor(L/2)%2===0)?-1:1;
+    const pos=side*RANGE;
     mover={
-      x:prev.x, z:prev.z, w:prev.w, d:prev.d, y0:L-1, h:1, hue:hueAt(L),
-      axis, pos:side*RANGE, dir:-side,
+      x:prev.x+(axis==='x'?pos:0), z:prev.z+(axis==='z'?pos:0), w:prev.w, d:prev.d, y0:L-1, h:1, hue:hueAt(L),
+      axis, pos, dir:-side,
       speed:Math.min(26, 9 + L*0.32),
     };
     camYT=H*0.62 + L*BH*unit;
